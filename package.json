@@ -74,7 +74,7 @@
         "@types/deep-equal": "^1.0.1",
         "@types/glob": "^8.0.0",
         "@types/mocha": "^10.0.1",
-        "@types/node": "^13.11.0",
+        "@types/node": "^24.0.14",
         "@types/vscode": "^1.102.0",
         "@typescript-eslint/eslint-plugin": "^5.62.0",
         "@typescript-eslint/parser": "^5.62.0",
