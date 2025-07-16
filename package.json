@@ -1,0 +1,97 @@
+{
+    "name": "reorder-python-imports",
+    "displayName": "reorder-python-imports",
+    "description": "Provides support for the reorder-python-imports tool for python",
+    "version": "0.3.1",
+    "publisher": "emaballarin",
+    "author": {
+        "name": "Emanuele Ballarin",
+        "email": "emanuele@ballarin.cc"
+    },
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/emaballarin/vscode-reorder-python-imports"
+    },
+    "homepage": "https://github.com/emaballarin/vscode-reorder-python-imports",
+    "categories": [
+        "Formatters",
+        "Other"
+    ],
+    "engines": {
+        "vscode": "^1.102.0",
+        "node": "24.4.0"
+    },
+    "activationEvents": [
+        "onLanguage:python",
+        "onCommand:reorder-python-imports.reorderImports"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "reorder-python-imports.reorderImports",
+                "title": "Reorder Imports",
+                "category": "Python Refactor"
+            }
+        ],
+        "menus": {
+            "editor/context": [
+                {
+                    "command": "reorder-python-imports.reorderImports",
+                    "group": "Refactor",
+                    "when": "editorLangId == python"
+                }
+            ]
+        },
+        "configuration": {
+            "title": "reorder-python-imports",
+            "properties": {
+                "reorder-python-imports.args": {
+                    "type": "array",
+                    "default": [],
+                    "scope": "resource",
+                    "description": "Command-line arguments passed to reorder-python-imports."
+                },
+                "reorderPythonImports.path": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to the reorder-python-imports executable"
+                }
+            }
+        }
+    },
+    "scripts": {
+        "compile": "tsc -p ./",
+        "deploy": "vsce publish --no-git-tag-version --no-update-package-json $npm_package_version",
+        "lint": "eslint src --ext ts",
+        "pretest": "npm run compile && npm run lint",
+        "test": "node ./out/test/runTest.js",
+        "vscode:prepublish": "npm run compile",
+        "watch": "tsc -watch -p ./"
+    },
+    "devDependencies": {
+        "@types/deep-equal": "^1.0.1",
+        "@types/mocha": "^10.0.1",
+        "@types/node": "^24.0.14",
+        "@types/vscode": "^1.102.0",
+        "@typescript-eslint/eslint-plugin": "^8.37.0",
+        "@typescript-eslint/parser": "^8.37.0",
+        "@vscode/test-electron": "^2.5.2",
+        "eslint": "^9.31.0",
+        "glob": "^11.0.3",
+        "mocha": "^11.7.1",
+        "prettier": "3.6.2",
+        "typescript": "^5.8.3",
+        "@vscode/vsce": "^3.6.0"
+    },
+    "extensionDependencies": [
+        "ms-python.python"
+    ],
+    "extensionKind": [
+        "workspace"
+    ],
+    "dependencies": {
+        "deep-equal": "^2.2.3"
+    }
+}

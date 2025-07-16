@@ -1,0 +1,9 @@
+# Project specific files
+out
+node_modules
+.vscode-test/
+*.vsix
+package-lock.json
+
+# General files
+.DS_Store
