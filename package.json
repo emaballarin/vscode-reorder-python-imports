@@ -2,7 +2,7 @@
     "name": "reorder-python-imports",
     "displayName": "reorder-python-imports",
     "description": "Provides support for the reorder-python-imports tool for python",
-    "version": "0.3.1",
+    "version": "0.3.2",
     "publisher": "emaballarin",
     "author": {
         "name": "Emanuele Ballarin",
