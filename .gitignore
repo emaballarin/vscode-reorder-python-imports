@@ -1,9 +1,9 @@
 # Project specific files
 out
+dist
 node_modules
 .vscode-test/
 *.vsix
-package-lock.json
 
 # General files
 .DS_Store

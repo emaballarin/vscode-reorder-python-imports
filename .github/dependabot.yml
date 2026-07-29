@@ -4,3 +4,9 @@ updates:
       directory: '/'
       schedule:
           interval: 'daily'
+      ignore:
+          # The root `typescript` is the copy typescript-eslint parses with, and
+          # it refuses to load against 7.x. The build compiler is the
+          # `typescript-next` alias, which is free to move. See the README.
+          - dependency-name: 'typescript'
+            versions: ['>=7']

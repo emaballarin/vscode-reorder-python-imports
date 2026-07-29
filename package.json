@@ -2,7 +2,7 @@
     "name": "reorder-python-imports",
     "displayName": "reorder-python-imports",
     "description": "Provides support for the reorder-python-imports tool for python",
-    "version": "0.3.2",
+    "version": "0.3.3",
     "publisher": "emaballarin",
     "author": {
         "name": "Emanuele Ballarin",
@@ -18,24 +18,51 @@
         "Formatters",
         "Other"
     ],
+    "keywords": [
+        "python",
+        "imports",
+        "isort",
+        "organize imports",
+        "formatter"
+    ],
+    "icon": "res/icon.png",
+    "galleryBanner": {
+        "color": "#4F46E5",
+        "theme": "dark"
+    },
     "engines": {
-        "vscode": "^1.107.0",
-        "node": "^25.2.1"
+        "vscode": "^1.107.0"
     },
     "activationEvents": [
-        "onLanguage:python",
-        "onCommand:reorder-python-imports.reorderImports"
+        "onLanguage:python"
     ],
-    "main": "./out/extension.js",
+    "main": "./dist/extension.js",
+    "capabilities": {
+        "untrustedWorkspaces": {
+            "supported": false,
+            "description": "The extension runs the reorder-python-imports executable resolved from workspace settings."
+        },
+        "virtualWorkspaces": {
+            "supported": false,
+            "description": "The extension runs a local reorder-python-imports executable, which needs the files on disk."
+        }
+    },
     "contributes": {
         "commands": [
             {
                 "command": "reorder-python-imports.reorderImports",
                 "title": "Reorder Imports",
-                "category": "Python Refactor"
+                "category": "Python Refactor",
+                "enablement": "editorLangId == python"
             }
         ],
         "menus": {
+            "commandPalette": [
+                {
+                    "command": "reorder-python-imports.reorderImports",
+                    "when": "editorLangId == python"
+                }
+            ],
             "editor/context": [
                 {
                     "command": "reorder-python-imports.reorderImports",
@@ -49,49 +76,55 @@
             "properties": {
                 "reorder-python-imports.args": {
                     "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
                     "default": [],
                     "scope": "resource",
-                    "description": "Command-line arguments passed to reorder-python-imports."
+                    "description": "Command-line arguments passed to reorder-python-imports. Each entry may hold several quoted arguments, e.g. \"--add-import 'from __future__ import annotations'\"."
                 },
                 "reorderPythonImports.path": {
                     "type": "string",
                     "default": "",
-                    "description": "Path to the reorder-python-imports executable"
+                    "scope": "resource",
+                    "description": "Path to the reorder-python-imports executable. When empty, the console script of the interpreter selected by the Python extension is used, falling back to running it as a module. A relative path is resolved against the workspace folder."
                 }
             }
         }
     },
     "scripts": {
-        "compile": "tsc -p ./",
+        "build": "npm run compile && npm run bundle",
+        "bundle": "node esbuild.mjs --production",
+        "compile": "node node_modules/typescript-next/bin/tsc -p ./",
         "deploy": "vsce publish --no-git-tag-version --no-update-package-json $npm_package_version",
-        "lint": "eslint src --ext ts",
+        "format": "prettier --write .",
+        "format:check": "prettier --check .",
+        "icon": "rsvg-convert -w 128 -h 128 res/icon.svg -o res/icon.png",
+        "lint": "eslint src",
+        "package": "vsce package",
         "pretest": "npm run compile && npm run lint",
-        "test": "node ./out/test/runTest.js",
-        "vscode:prepublish": "npm run compile",
-        "watch": "tsc -watch -p ./"
+        "test": "node --test \"out/test/**/*.test.js\"",
+        "vscode:prepublish": "npm run test && npm run bundle",
+        "watch": "node esbuild.mjs --watch",
+        "watch:tsc": "node node_modules/typescript-next/bin/tsc -watch -p ./"
     },
     "devDependencies": {
-        "@types/deep-equal": "^1.0.1",
-        "@types/mocha": "^10.0.1",
         "@types/node": "^26.1.0",
-        "@types/vscode": "^1.102.0",
+        "@types/vscode": "~1.107.0",
         "@typescript-eslint/eslint-plugin": "^8.37.0",
         "@typescript-eslint/parser": "^8.37.0",
-        "@vscode/test-electron": "^3.0.0",
+        "@vscode/python-extension": "^1.0.6",
+        "@vscode/vsce": "^3.6.0",
+        "esbuild": "^0.28.1",
         "eslint": "^10.0.0",
-        "glob": "^13.0.0",
-        "mocha": "^11.7.1",
         "prettier": "3.9.6",
-        "typescript": "^7.0.2",
-        "@vscode/vsce": "^3.6.0"
+        "typescript": "^6.0.3",
+        "typescript-next": "npm:typescript@^7.0.2"
     },
     "extensionDependencies": [
         "ms-python.python"
     ],
     "extensionKind": [
         "workspace"
-    ],
-    "dependencies": {
-        "deep-equal": "^2.2.3"
-    }
+    ]
 }

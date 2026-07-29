@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Sorted import statements in two groups">
+    <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#4F46E5" />
+            <stop offset="1" stop-color="#0EA5E9" />
+        </linearGradient>
+    </defs>
+
+    <rect width="128" height="128" rx="28" fill="url(#bg)" />
+
+    <!-- Two blocks of ascending bars: imports gathered into groups, sorted
+         within each. Amber marks the first group, white the second. -->
+    <g fill="#FCD34D">
+        <rect x="30" y="24" width="30" height="10" rx="5" />
+        <rect x="30" y="40" width="46" height="10" rx="5" />
+    </g>
+    <g fill="#FFFFFF">
+        <rect x="30" y="62" width="34" height="10" rx="5" />
+        <rect x="30" y="78" width="52" height="10" rx="5" />
+        <rect x="30" y="94" width="68" height="10" rx="5" />
+    </g>
+</svg>

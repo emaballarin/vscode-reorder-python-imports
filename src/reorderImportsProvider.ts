@@ -1,43 +1,95 @@
-import { ChildProcess, exec } from 'child_process';
-import deepEqual from 'deep-equal';
-import * as os from 'os';
-import * as path from 'path';
+import { execFile } from 'node:child_process';
 import {
-    CancellationToken,
     CodeAction,
-    CodeActionContext,
     CodeActionKind,
     CodeActionProvider,
+    EndOfLine,
+    LogOutputChannel,
     Position,
     ProviderResult,
     Range,
-    Selection,
-    TextDocument,
     TextEditor,
+    window,
     workspace,
-    extensions,
 } from 'vscode';
+import { changesSubstring, normalizeEol, splitArgs, toLf } from './textDiff';
+import { resolveInvocation } from './toolResolver';
 
-const deepStrictEqual = (actual: any, expected: any) =>
-    deepEqual(actual, expected, { strict: true });
+/**
+ * Upper bound on the rewritten source held in memory.
+ *
+ * `execFile` defaults to 1 MiB and fails the call once that is exceeded, which
+ * silently broke large modules.
+ */
+const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 
-const getPythonPath = (): string => {
-    const ext = extensions.getExtension('ms-python.python');
+/**
+ * How long the tool may run before it is killed.
+ *
+ * Sorting imports is near-instant; anything approaching this is wedged, and a
+ * wedged child would otherwise keep the document locked out of reordering for
+ * the rest of the session.
+ */
+const TIMEOUT_MS = 30_000;
 
-    if (!ext) {
-        throw new Error("Can't find ms-python.python extension.");
-    }
-
-    const extApi = ext.exports;
-
-    const execCommand = extApi.settings.getExecutionDetails().execCommand[0];
-
-    if (typeof execCommand !== 'string') {
-        throw new Error('Unexpected return value from ms-python.python');
-    }
-
-    return execCommand;
+type SpawnFailure = NodeJS.ErrnoException & {
+    stderr?: string;
+    killed?: boolean;
 };
+
+/**
+ * Runs `file` with `args`, feeding `input` on stdin.
+ *
+ * The executable and its arguments are passed as an argv array, so no shell is
+ * involved and nothing in the user's settings can be interpreted as a command.
+ */
+function run(
+    file: string,
+    args: string[],
+    input: string,
+): Promise<{ stdout: string; stderr: string }> {
+    return new Promise((resolve, reject) => {
+        const child = execFile(
+            file,
+            args,
+            {
+                maxBuffer: MAX_OUTPUT_BYTES,
+                timeout: TIMEOUT_MS,
+                windowsHide: true,
+            },
+            (error, stdout, stderr) => {
+                if (error) {
+                    reject(Object.assign(error, { stderr }));
+                    return;
+                }
+                resolve({ stdout, stderr });
+            },
+        );
+
+        // A spawn that never got off the ground tears down stdin; the resulting
+        // EPIPE would otherwise surface as an unhandled error on the extension
+        // host rather than as the ENOENT reported to the callback above.
+        child.stdin?.on('error', () => undefined);
+        child.stdin?.end(input);
+    });
+}
+
+/** Turns a spawn or exit failure into a message that says what to do about it. */
+function describeFailure(error: SpawnFailure): string {
+    if (error.code === 'ENOENT') {
+        return "Reorder Imports: 'reorder-python-imports' was not found. Install it into the selected interpreter (pip install reorder-python-imports), or set 'reorderPythonImports.path'.";
+    }
+
+    if (error.code === 'EACCES') {
+        return "Reorder Imports: 'reorder-python-imports' is not executable.";
+    }
+
+    if (error.killed) {
+        return `Reorder Imports: the tool did not finish within ${TIMEOUT_MS / 1000} seconds and was stopped.`;
+    }
+
+    return `Reorder Imports failed: ${error.stderr?.trim() || error.message}`;
+}
 
 export class ReorderImportsProvider implements CodeActionProvider {
     public static readonly PROVIDED_KINDS = [
@@ -46,177 +98,163 @@ export class ReorderImportsProvider implements CodeActionProvider {
         CodeActionKind.SourceOrganizeImports.append('reorder-python-imports'),
     ];
 
-    provideCodeActions(
-        document: TextDocument,
-        range: Range | Selection,
-        context: CodeActionContext,
-        token: CancellationToken
-    ): ProviderResult<CodeAction[]> {
-        console.log('Context:', context);
-        const actionTitle = 'Reorder Imports';
+    /**
+     * Documents with a run in flight.
+     *
+     * Organize-on-save and a manual invocation can overlap, and the second run
+     * would compute its edit against text the first is about to replace.
+     */
+    private readonly inFlight = new Set<string>();
 
-        let action = new CodeAction(
-            actionTitle,
-            ReorderImportsProvider.PROVIDED_KINDS[0]
+    constructor(private readonly log: LogOutputChannel) {}
+
+    provideCodeActions(): ProviderResult<CodeAction[]> {
+        const action = new CodeAction(
+            'Reorder Imports',
+            ReorderImportsProvider.PROVIDED_KINDS[0],
         );
         action.command = {
             command: 'reorder-python-imports.reorderImports',
-            title: '',
+            title: 'Reorder Imports',
         };
 
         return [action];
     }
 
-    public async reorderImports(editor: TextEditor) {
-        let doc = editor.document;
-        console.log('Reordering ' + doc.uri);
+    public async reorderImports(editor: TextEditor): Promise<void> {
+        const doc = editor.document;
 
-        let reorderPath: string | null = null;
-
-        const config = workspace.getConfiguration('reorderPythonImports');
-        let configPath = config.get<string>('path');
-
-        if (configPath) {
-            if (configPath.startsWith('~')) {
-                configPath = path.join(os.homedir(), configPath.slice(1));
-            }
-            configPath = path.resolve(configPath);
-            reorderPath = configPath;
-        } else {
-            const pythonPath = getPythonPath();
-
-            reorderPath = path.join(
-                path.dirname(pythonPath),
-                'reorder-python-imports'
+        // The command is reachable from the palette and from keybindings, not
+        // only from the Python-scoped code action.
+        if (doc.languageId !== 'python') {
+            this.log.info(
+                `Ignoring a non-Python document (${doc.languageId}).`,
             );
+            void window.showInformationMessage(
+                'Reorder Imports only applies to Python files.',
+            );
+            return;
         }
-        console.debug('Reorder Path:', reorderPath);
 
-        const extSpecifiedArgs = ['--exit-zero-even-if-changed'];
-        const userSpecifiedArgs = workspace
-            .getConfiguration('reorder-python-imports', doc.uri)
-            .get<string[]>('args');
+        const key = doc.uri.toString();
+        if (this.inFlight.has(key)) {
+            this.log.debug(`Already reordering ${key}; skipping this request.`);
+            return;
+        }
+        this.inFlight.add(key);
 
-        let _reorderArgs = extSpecifiedArgs.concat(userSpecifiedArgs || []);
-
-        // Remove duplicate args
-        const reorderArgs = [...new Set(_reorderArgs)];
-
-        console.debug('Reorder args:', reorderArgs);
-
-        const reorderCmd = `"${reorderPath}" ${reorderArgs.join(' ')} -`;
-        console.debug('Reorder cmd:', reorderCmd);
-
-        const input = doc.getText();
-
-        const lastLine = doc.lineCount - 1;
-        const lastChar = doc.lineAt(lastLine).text.length;
-        const startPos = new Position(0, 0);
-        const endPos = new Position(lastLine, lastChar);
+        this.log.info(`Reordering ${key}`);
 
         try {
-            let [stdout, stderr] = await new Promise<[string, string]>(
-                (resolve, reject) => {
-                    const reorderProcess: ChildProcess = exec(
-                        reorderCmd,
-                        (error, stdout, stderr) => {
-                            if (error) {
-                                reject(error);
-                                return;
-                            }
-                            resolve([stdout, stderr]);
-                        }
-                    );
-                    // send code to be formatted into stdin
-                    reorderProcess.stdin?.write(input);
-                    reorderProcess.stdin?.end();
-                }
+            const invocation = await resolveInvocation(doc, this.log);
+            this.log.debug(
+                `Executable: ${invocation.file} (${invocation.origin})`,
             );
-            // Replace all double carriage returns to one. Why? Because there's problem which occurs when
-            // EOL in VSCode is set to CRLF. Running child process with reorder-python-imports is replacing for some
-            // reason `\r\n` to`\r\r\n` and it's causing double new lines in VSCode editor.
-            stdout = stdout.replace(/\r\r/g, '\r');
 
-            console.log('STDOUT:', stdout);
-            console.log('STDERR:', stderr);
+            const configuredArgs =
+                workspace
+                    .getConfiguration('reorder-python-imports', doc.uri)
+                    .get<string[]>('args') ?? [];
 
-            const changeOffsetRanges = changesSubstring(input, stdout);
+            // `--exit-zero-even-if-changed` keeps a rewritten file from being
+            // reported as a failure; the diff below decides what actually
+            // changed. `-` makes the tool read from stdin.
+            const args = [
+                ...invocation.leadingArgs,
+                ...new Set([
+                    '--exit-zero-even-if-changed',
+                    ...configuredArgs.flatMap(splitArgs),
+                ]),
+                '-',
+            ];
+            this.log.debug(`Arguments: ${JSON.stringify(args)}`);
 
-            if (changeOffsetRanges === 'no-change') {
-                console.log('No change');
+            const original = doc.getText();
+
+            // The tool is fed LF only. On Windows its stdout is a text stream,
+            // so every `\n` it writes comes back as `\r\n`; sending CRLF in
+            // would come back as `\r\r\n`. Normalising both ends keeps that
+            // translation out of the buffer.
+            const { stdout, stderr } = await run(
+                invocation.file,
+                args,
+                toLf(original),
+            );
+
+            if (stderr.trim().length > 0) {
+                this.log.debug(`stderr: ${stderr.trim()}`);
+            }
+
+            const updated = normalizeEol(
+                stdout,
+                doc.eol === EndOfLine.CRLF ? '\r\n' : '\n',
+            );
+
+            const change = changesSubstring(original, updated);
+
+            if (change === 'no-change') {
+                this.log.info('No change.');
                 return;
-            } else if (changeOffsetRanges === 'full-change') {
-                // callback used instead of the edit in the func args, due to edits
-                // being invalidated in callbacks/async fns.
-                console.log('Full change');
-                editor.edit((edit) => {
-                    edit.replace(new Range(startPos, endPos), stdout);
-                });
-            } else {
-                let originalChangeRange = new Range(
-                    doc.positionAt(changeOffsetRanges[0][0]),
-                    doc.positionAt(
-                        changeOffsetRanges[0][0] + changeOffsetRanges[0][1]
-                    )
+            }
+
+            // `original` was captured before an await, so the offsets below only
+            // describe this document if it has not been touched since.
+            if (doc.isClosed || doc.getText() !== original) {
+                this.log.warn(
+                    'Document changed while reordering; discarding the edit.',
                 );
-                const changeStr = stdout.substr(
-                    changeOffsetRanges[1][0],
-                    changeOffsetRanges[1][1]
+                return;
+            }
+
+            const [range, replacement] =
+                change === 'full-change'
+                    ? ([
+                          new Range(
+                              new Position(0, 0),
+                              doc.positionAt(original.length),
+                          ),
+                          updated,
+                      ] as const)
+                    : ([
+                          new Range(
+                              doc.positionAt(change[0][0]),
+                              doc.positionAt(change[0][0] + change[0][1]),
+                          ),
+                          updated.slice(
+                              change[1][0],
+                              change[1][0] + change[1][1],
+                          ),
+                      ] as const);
+
+            this.log.debug(
+                `Replacing ${JSON.stringify(range)} with ${JSON.stringify(replacement)}`,
+            );
+
+            // Applied through this callback rather than the command's own edit
+            // builder, which is invalidated by the awaits above.
+            const applied = await editor.edit((edit) =>
+                edit.replace(range, replacement),
+            );
+
+            if (!applied) {
+                this.log.error('VS Code rejected the edit.');
+                void window.showErrorMessage(
+                    'Reorder Imports: the edit could not be applied.',
                 );
-                console.log('Change from range:', originalChangeRange);
-                console.log('Change string:', changeStr);
-                editor.edit((edit) => {
-                    edit.replace(originalChangeRange, changeStr);
-                });
             }
         } catch (error) {
+            const failure = error as SpawnFailure;
+            this.log.error(failure.stack ?? String(failure));
 
-            // TODO: Intelligently detect error types
-            throw error;
+            void window
+                .showErrorMessage(describeFailure(failure), 'Show Log')
+                .then((choice) => {
+                    if (choice === 'Show Log') {
+                        this.log.show();
+                    }
+                });
+        } finally {
+            this.inFlight.delete(key);
         }
     }
-}
-
-/**
- * Compares two strings and determines what the range of differences are.
- *
- * Returns [[originalStartIndex, originalLength], [otherStartIndex, otherLength]]
- *
- * Example: "abcdefgh" and "abcxyzh" would return `[[3, 4], [3, 3]]`
- */
-export function changesSubstring(
-    original: string,
-    other: string
-): 'no-change' | 'full-change' | [[number, number], [number, number]] {
-    if (original === other) {
-        return 'no-change';
-    }
-
-    let minLength = Math.min(original.length, other.length);
-
-    let numFromStart; // Offset of the first change from the start of the strings
-    for (numFromStart = 0; numFromStart < minLength; ++numFromStart) {
-        if (original[numFromStart] !== other[numFromStart]) {
-            break;
-        }
-    }
-
-    let numFromEnd; // Offset of the last change from the end of the strings
-    for (numFromEnd = 0; numFromEnd < minLength; ++numFromEnd) {
-        if (
-            original[original.length - numFromEnd - 1] !==
-            other[other.length - numFromEnd - 1]
-        ) {
-            break;
-        }
-    }
-
-    if (deepStrictEqual([numFromStart, numFromEnd], [0, 0])) {
-        return 'full-change';
-    }
-
-    return [
-        [numFromStart, original.length - numFromEnd - numFromStart],
-        [numFromStart, other.length - numFromEnd - numFromStart],
-    ];
 }

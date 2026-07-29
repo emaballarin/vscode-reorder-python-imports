@@ -1,35 +1,34 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import { ReorderImportsProvider } from './reorderImportsProvider';
 
-// this method is called when your extension is activated
-// your extension is activated the very first time the command is executed
-export async function activate(context: vscode.ExtensionContext) {
-    console.log('"reorder-python-imports" is now active.');
+/** Registers the reorder command and the organize-imports code action. */
+export function activate(context: vscode.ExtensionContext): void {
+    const log = vscode.window.createOutputChannel('reorder-python-imports', {
+        log: true,
+    });
+    const provider = new ReorderImportsProvider(log);
 
-    let reorder_provider = new ReorderImportsProvider();
-
-    // The command has been defined in the package.json file
-    // Now provide the implementation of the command with registerCommand
-    // The commandId parameter must match the command field in package.json
-    let reorder_command = vscode.commands.registerTextEditorCommand(
-        'reorder-python-imports.reorderImports',
-        reorder_provider.reorderImports
+    context.subscriptions.push(
+        log,
+        // The command id must match the one contributed in package.json. The
+        // promise is returned rather than discarded so that anything awaiting
+        // the command waits for the edit; `reorderImports` handles its own
+        // failures, so it never rejects.
+        vscode.commands.registerTextEditorCommand(
+            'reorder-python-imports.reorderImports',
+            (editor) => provider.reorderImports(editor),
+        ),
+        vscode.languages.registerCodeActionsProvider(
+            { language: 'python' },
+            provider,
+            {
+                providedCodeActionKinds: ReorderImportsProvider.PROVIDED_KINDS,
+            },
+        ),
     );
-    context.subscriptions.push(reorder_command);
 
-    let reorder_code_action = vscode.languages.registerCodeActionsProvider(
-        { language: 'python' },
-        reorder_provider,
-        {
-            providedCodeActionKinds: ReorderImportsProvider.PROVIDED_KINDS,
-        }
-    );
-    context.subscriptions.push(reorder_code_action);
+    log.info('"reorder-python-imports" is now active.');
 }
 
-// this method is called when your extension is deactivated
-export function deactivate() {
-    console.log('"reorder-python-imports" is no longer active.');
-}
+/** Nothing to tear down: every disposable is owned by the extension context. */
+export function deactivate(): void {}

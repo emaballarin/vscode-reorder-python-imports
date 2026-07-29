@@ -1,0 +1,9 @@
+# Build output and generated files.
+out
+dist
+node_modules
+package-lock.json
+*.vsix
+
+# Binary and hand-tuned assets.
+res

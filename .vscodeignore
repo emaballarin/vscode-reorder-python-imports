@@ -1,10 +1,21 @@
+# Everything except the bundled extension and the marketplace icon.
+.github/**
 .vscode/**
 .vscode-test/**
-out/test/**
+out/**
 src/**
+res/**
+!res/icon.png
+.editorconfig
+.gitattributes
 .gitignore
+.nvmrc
+.prettierignore
+.prettierrc.yml
+esbuild.mjs
+eslint.config.mjs
+package-lock.json
 vsc-extension-quickstart.md
 **/tsconfig.json
-**/.eslintrc.json
 **/*.map
 **/*.ts
