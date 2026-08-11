@@ -109,7 +109,7 @@
         "watch:tsc": "node node_modules/typescript-next/bin/tsc -watch -p ./"
     },
     "devDependencies": {
-        "@types/node": "^26.1.0",
+        "@types/node": "^26.2.0",
         "@types/vscode": "~1.125.0",
         "@typescript-eslint/eslint-plugin": "^8.37.0",
         "@typescript-eslint/parser": "^8.37.0",
