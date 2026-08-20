@@ -116,7 +116,7 @@
         "@vscode/python-extension": "^1.0.6",
         "@vscode/vsce": "^3.6.0",
         "esbuild": "^0.28.1",
-        "eslint": "^10.0.0",
+        "eslint": "^10.8.1",
         "prettier": "3.9.6",
         "typescript": "^6.0.3",
         "typescript-next": "npm:typescript@^7.0.2"
