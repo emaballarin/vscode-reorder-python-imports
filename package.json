@@ -112,7 +112,7 @@
         "@types/node": "^26.6.2",
         "@types/vscode": "~1.138.0",
         "@typescript-eslint/eslint-plugin": "^8.70.0",
-        "@typescript-eslint/parser": "^8.69.0",
+        "@typescript-eslint/parser": "^8.70.1",
         "@vscode/python-extension": "^1.0.6",
         "@vscode/vsce": "^4.0.0",
         "esbuild": "^0.28.2",
